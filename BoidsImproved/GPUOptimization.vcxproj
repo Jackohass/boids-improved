@@ -32,6 +32,7 @@
       <FileType>Document</FileType>
     </CopyFileToFolders>
     <None Include="src\shaders\computeBoid.comp" />
+    <None Include="src\shaders\getBoidHash.comp" />
     <None Include="src\shaders\pixelShader.frag" />
     <None Include="src\shaders\vertexShader.vert" />
   </ItemGroup>

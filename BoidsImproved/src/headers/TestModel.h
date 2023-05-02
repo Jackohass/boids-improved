@@ -15,13 +15,13 @@ using glm::sphericalRand;
 using glm::linearRand;
 
 //Boid Simulation
-constexpr float confinementRadius = 10.0f;
+constexpr float confinementRadius = 3.0f;
 constexpr float cohesionRadius = 0.15f;
 constexpr float avoidanceRadius = 0.1f;
 constexpr float conformanceRadius = 0.25f;
 constexpr int dimension = confinementRadius / conformanceRadius;
 
-constexpr int numBoids = 10000;
+constexpr int numBoids = 3000;
 
 // Used to describe a triangular surface:
 class Triangle

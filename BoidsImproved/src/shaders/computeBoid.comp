@@ -14,27 +14,6 @@ const float conformanceRadius = 0.25f;
 struct Boid {
 	vec3 pos;
 	vec3 vel;
-
-	/*
-	void move(const glm::vec3& p) {
-		pos += p;
-	}*/
-
-	/*glm::mat4 getModel() {
-		//Calculate the angle the boid needs to rotate to point forward
-		//glm::vec3 forward(0, 1, 0);
-		vec3 M(1.0f / 2.0f, glm::sqrt(2.0f / 3.0f) / 2.0f, 1.0f / (2.0f * glm::sqrt(3.0f)));
-		vec3 forward = vec3(0.5, 1, 1.0f / (2.0f * glm::sqrt(3.0f))) - M;
-		
-		vec3 ref = glm::normalize(glm::cross(forward, vel));
-		float angle = glm::orientedAngle(glm::normalize(forward), glm::normalize(vel), ref);
-
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
-		model *= glm::eulerAngleYXZ(rot[1], rot[0], rot[2]);
-
-		model = glm::rotate(model, angle, ref);
-		return model;
-	}*/
 };
 
 vec3 cohesion() {
@@ -177,20 +156,20 @@ void main() {
     value.x = mod(float(texelCoord.x) + t * speed, width) / (gl_NumWorkGroups.x * gl_WorkGroupSize.x);
     value.y = float(texelCoord.y)/(gl_NumWorkGroups.y*gl_WorkGroupSize.y);
     imageStore(imgOutput, texelCoord, value);
-
+	const float normalizer = 1.0f/1000.f;
 	Boid& b = boids[i];
-		vector<vector<Boid *> *>& neigh = neighbours[spatialCellsIndex(b.pos)];
-		//getNeighbours(b.pos, neigh);
+	vector<vector<Boid *> *>& neigh = neighbours[spatialCellsIndex(b.pos)];
+	//getNeighbours(b.pos, neigh);
 
-		vec3 a = cohesion(b, neigh);
-		a += avoidance(b, neigh); 
-		a += conformance(b, neigh);
-		a += confinement(b);
-		a += drag(b);
+	vec3 a = cohesion(b, neigh);
+	a += avoidance(b, neigh); 
+	a += conformance(b, neigh);
+	a += confinement(b);
+	a += drag(b);
 
-		//b.vel += v;
-		//cout << i << ": " << "(" << b.vel[0] << ", " << b.vel[1] << ", " << b.vel[2] << ")" << endl;
-		b.move(clamp(b.vel, a, normalizer, dt) * dt);
-		//v = v0 + a * dt
-		//p = 0.5 * dt * dt * a + dt * v = 0.5 * dt * dt + dt * v0 + a * dt * dt = 1.5*a*dt^2 + v0*dt
+	//b.vel += v;
+	//cout << i << ": " << "(" << b.vel[0] << ", " << b.vel[1] << ", " << b.vel[2] << ")" << endl;
+	b.move(clamp(b.vel, a, normalizer, dt) * dt);
+	//v = v0 + a * dt
+	//p = 0.5 * dt * dt * a + dt * v = 0.5 * dt * dt + dt * v0 + a * dt * dt = 1.5*a*dt^2 + v0*dt
 }

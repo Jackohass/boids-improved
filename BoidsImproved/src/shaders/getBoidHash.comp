@@ -1,0 +1,33 @@
+#version 460 core
+layout (local_size_x = 10, local_size_y = 1, local_size_z = 1) in;
+
+layout(std140, binding=4) buffer Pos
+{
+    vec4 pos[];
+};
+
+layout(std430, binding=5) buffer Hash
+{
+    int hashes[];
+};
+
+uniform int dimension;
+uniform float confinementRadius;
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+
+	float floatDim = dimension;
+	const float scale = floatDim / (confinementRadius * 2.0f);
+	//Calculate the per axis cell indexes
+	vec3 tempOffPos =(pos[gid].xyz + vec3(confinementRadius)) * scale;
+	ivec3 offPos = ivec3(pos[gid].xyz);
+
+	//Check if any pos was the maximum of said dimension or outside, and then
+	//treat it as being in the last cell of that dimension
+	for(int i = 0; i < 3; i++){
+		offPos[i] = clamp(offPos[i], 0, dimension - 1);
+	}
+
+	hashes[gid] = offPos.x + offPos.y * dimension + offPos.z * dimension * dimension;
+}

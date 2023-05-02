@@ -27,6 +27,20 @@ struct Vertex{
 	//glm::vec3 reflectance; //Vertex Illumination
 };
 
+struct Pos
+{
+	float x, y, z, w; // Positions. Variable w is not used, but is set for byte offset reasons.
+};
+struct Vel
+{
+	float vx, vy, vz, vw; // Velocities. Variable vw is not used, but is set for byte offset reasons.
+};
+struct CellIndex
+{
+	int start, end;
+};
+
+
 using namespace std;
 using glm::vec3;
 using glm::vec4;
@@ -60,8 +74,15 @@ float depthBuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 vec3 lightPos = glm::rotateX(vec3(0, -4.0, -0.7), 180.0f);
 vec3 lightPower = 280.1f * vec3(1, 1, 1);
 vec3 indirectLightPowerPerArea = 0.5f * vec3(1, 1, 1);
+
 unsigned int shader;
+GLuint getBoidHashProgram;
+
 unsigned int VAO;
+GLuint posBuffer;
+GLuint velBuffer;
+GLuint hashBuffer;
+GLuint idsBuffer;
 
 omp_lock_t writelock[dimension * dimension * dimension];
 
@@ -69,17 +90,17 @@ omp_lock_t writelock[dimension * dimension * dimension];
 vector<Boid *> spatialCells[dimension * dimension * dimension];
 vector<vector<Boid *> *> neighbours[dimension * dimension * dimension];
 
+//GPU optimization necessary variables
+Pos* boidPos;
+Vel* boidVel;
+int boidHashes[numBoids];
+CellIndex cellIndexes[numBoids];
+
+
 // ----------------------------------------------------------------------------
 // FUNCTIONS
-
-void ComputePolygonRows(const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels,
-	vector<Pixel>& rightPixels);
 void Update();
 void Draw();
-void Interpolate(ivec2 a, ivec2 b, vector<ivec2>& result);
-void Interpolate(Pixel a, Pixel b, vector<Pixel>& result);
-void VertexShader(const Vertex& v, Pixel& p);
-void PixelShader(const Pixel& p);
 void calculateCellNeighbours();
 
 void updateShaders(mat4 model, vec3 objectColor)
@@ -118,32 +139,38 @@ void setupShaders()
 {
 	string vertexString;
 	string pixelString;
+	string getBoidHashString;
 	ifstream vertexFile;
 	ifstream pixelFile;
-	std::stringstream vShaderStream, fShaderStream;
+	ifstream getBoidHashFile;
+	std::stringstream vShaderStream, fShaderStream, getBoidHashStream;
 	vertexFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 	pixelFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+	getBoidHashFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
 	try {
 		vertexFile.open("src/shaders/vertexShader.vert");
 		pixelFile.open("src/shaders/pixelShader.frag");
+		getBoidHashFile.open("src/shaders/getBoidHash.comp");
 		vShaderStream << vertexFile.rdbuf();
 		fShaderStream << pixelFile.rdbuf();
+		getBoidHashStream << getBoidHashFile.rdbuf();
 		vertexString = vShaderStream.str();
 		pixelString = fShaderStream.str();
+		getBoidHashString = getBoidHashStream.str();
 		vertexFile.close();
 		pixelFile.close();
+		getBoidHashFile.close();
 	} catch (std::ifstream::failure& e){
 		std::cout << "ERROR::SHADER::FILE_NOT_SUCCESFULLY_READ: " << e.what() << std::endl;
 	}
 	std::cout << "vertex shader: " << vertexString << std::endl;
 	std::cout << "pixel shader: " << pixelString << std::endl;
-	
-	
+	std::cout << "getBoidHash shader: " << getBoidHashString << std::endl;
 
 	const char* codeVertex = vertexString.c_str();
 	const char* codePixel = pixelString.c_str();
-	
+	const char* codeGetBoidHash = getBoidHashString.c_str();
 
 	unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(vertexShader, 1, &codeVertex, NULL);
@@ -155,14 +182,25 @@ void setupShaders()
 	glCompileShader(pixelShader);
 	checkShaderErrors(pixelShader);
 
+	unsigned int getBoidHashShader = glCreateShader(GL_COMPUTE_SHADER);
+	glShaderSource(getBoidHashShader, 1, &codeGetBoidHash, NULL);
+	glCompileShader(getBoidHashShader);
+	checkShaderErrors(getBoidHashShader);
+
+	//Create render program
 	shader = glCreateProgram();
 	glAttachShader(shader, vertexShader);
 	glAttachShader(shader, pixelShader);
-
 	glLinkProgram(shader);
 	glUseProgram(shader);
 	glDeleteShader(vertexShader);
 	glDeleteShader(pixelShader);
+
+	//Create getBoidHash program
+	getBoidHashProgram = glCreateProgram();
+	glAttachShader(getBoidHashProgram, getBoidHashShader);
+	glLinkProgram(getBoidHashProgram);
+	glDeleteShader(getBoidHashProgram);
 }
 
 int main(int argc, char* argv[])
@@ -174,6 +212,7 @@ int main(int argc, char* argv[])
 	
 
 	LoadLevel(objects, boids);
+
 	screen = InitializeSDL(SCREEN_WIDTH, SCREEN_HEIGHT);
 
 	if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
@@ -203,7 +242,7 @@ int main(int argc, char* argv[])
 	setupShaders();
 
 	//Prepare the triangle buffer
-	const int numVerts = 30 /*HARDCODE BE CAREFUL, SPICY*/ * 3 * 3 * 2;
+	const int numVerts = 30 /*HARDCODED, BE CAREFUL*/ * 3 * 3 * 2;
 	float vertices[numVerts];
 	int curObjOffset = 0;
 	for (int objIndex = 0; objIndex < objects.size(); objIndex++)
@@ -222,8 +261,6 @@ int main(int argc, char* argv[])
 					vertices[curVertOffset + 3 + k] = triangles[i].normal[k];
 				}
 			}
-
-			//cout << triangles[i].normal[0] << " " << triangles[i].normal[1] << " " << triangles[i].normal[2] << endl;
 		}
 		curObjOffset += triangles.size();
 	}
@@ -245,27 +282,69 @@ int main(int argc, char* argv[])
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
 	glEnableVertexAttribArray(1);
 
+	//Setup Shader Storage Buffer Objects
+	GLint bufMask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT; // the invalidate makes a big difference when re-writing
+
+	glGenBuffers(1, &posBuffer);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, posBuffer);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, numBoids * sizeof(struct Pos), NULL, GL_STATIC_DRAW);
+	boidPos = (struct Pos*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, numBoids * sizeof(struct Pos), bufMask);
+	for (int i = 0; i < numBoids; i++)
+	{
+		boidPos[i].x = boids[i].pos.x;
+		boidPos[i].y = boids[i].pos.y;
+		boidPos[i].z = boids[i].pos.z;
+		boidPos[i].w = 1.;
+	}
+	glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+	glGenBuffers(1, &velBuffer);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, velBuffer);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, numBoids * sizeof(struct Vel), NULL, GL_STATIC_DRAW);
+	boidVel = (struct Vel*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, numBoids * sizeof(struct Vel), bufMask);
+	for (int i = 0; i < numBoids; i++)
+	{
+		boidVel[i].vx = boids[i].vel.x;
+		boidVel[i].vy = boids[i].vel.y;
+		boidVel[i].vz = boids[i].vel.z;
+		boidVel[i].vw = 0.;
+	}
+	glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+	glGenBuffers(1, &hashBuffer);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashBuffer);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(boidHashes), NULL, GL_DYNAMIC_COPY);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	glGenBuffers(1, &idsBuffer);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, idsBuffer);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(cellIndexes), NULL, GL_DYNAMIC_COPY);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	// --------
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, posBuffer);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, hashBuffer);
+
+	glUseProgram(getBoidHashProgram);
+	glUniform1i(glGetUniformLocation(getBoidHashProgram, "dimension"), dimension);
+	glUniform1f(glGetUniformLocation(getBoidHashProgram, "confinementRadius"), confinementRadius);
+	glDispatchCompute(numBoids / 10, 1, 1);
+	glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
+
+	printf("Hashes:\n");
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, hashBuffer);
+	GLvoid* p = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+	memcpy(boidHashes, p, sizeof(boidHashes));
+	glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+	for (int& hash : boidHashes) {
+		printf("%d, ", hash);
+	}
+	printf("\nEnd of hashes.\n\n");
+
 	//Initialize the spaital data structures
 	calculateCellNeighbours();
 
 	t = SDL_GetTicks();	// Set start value for timer.
-
-	/*vector<ivec2> vertexPixels(3);
-	vertexPixels[0] = ivec2(10, 5);
-	vertexPixels[1] = ivec2(5, 10);
-	vertexPixels[2] = ivec2(15, 15);
-	vector<ivec2> leftPixels;
-	vector<ivec2> rightPixels;
-	ComputePolygonRows(vertexPixels, leftPixels, rightPixels);
-	for (int row = 0; row < leftPixels.size(); ++row)
-	{
-		cout << "Start: ("
-			<< leftPixels[row].x << ","
-			<< leftPixels[row].y << "). "
-			<< "End: ("
-			<< rightPixels[row].x << ","
-			<< rightPixels[row].y << "). " << endl;
-	}*/
 
 	const int precision = 10;
 	int avgNum[precision];
@@ -454,27 +533,6 @@ void simulateBoid(float dt){
 
 		Sources: https://vergenet.net/~conrad/boids/pseudocode.html, https://dl.acm.org/doi/10.1145/37402.37406 
 	*/
-	const float normalizer = 1.0f/1000.f;
-
-	
-	#pragma omp parallel for
-	for (int i = 0; i < boids.size(); i++) {
-		Boid& b = boids[i];
-		vector<vector<Boid *> *>& neigh = neighbours[spatialCellsIndex(b.pos)];
-		//getNeighbours(b.pos, neigh);
-
-		vec3 a = cohesion(b, neigh);
-		a += avoidance(b, neigh); 
-		a += conformance(b, neigh);
-		a += confinement(b);
-		a += drag(b);
-
-		//b.vel += v;
-		//cout << i << ": " << "(" << b.vel[0] << ", " << b.vel[1] << ", " << b.vel[2] << ")" << endl;
-		b.move(clamp(b.vel, a, normalizer, dt) * dt);
-		//v = v0 + a * dt
-		//p = 0.5 * dt * dt * a + dt * v = 0.5 * dt * dt + dt * v0 + a * dt * dt = 1.5*a*dt^2 + v0*dt
-	}
 }
 
 void Update()
