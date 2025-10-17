@@ -19,7 +19,7 @@ All of them share a lot of code through headers and shaders.
 The biggest difference between them is the cpp file with the main method.
 So there is a lot of code duplication that could be removed which shall be a future milestone.
 
-I beg to the coding gods and ask my previous programming teachers for forgiveness for my improper useo f, well more like lack of, proper build tools.  
+I beg to the coding gods and ask my previous programming teachers for forgiveness for my improper use of, well more like lack of, proper build tools.  
 
 ### Prerequists:
 - Visual Studio 2017 or later.
@@ -36,3 +36,4 @@ The arrows allows you to control the camera in the cardinal directions.
 WASD allows you to control the light source in the cardinal directions.
 
 Q & E allows you to move the light source up and down.
+
