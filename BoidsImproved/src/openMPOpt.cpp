@@ -13,6 +13,7 @@
 #include"headers/TestModel.h"
 #include"headers/glad.h"
 
+
 struct Pixel{
 	int x;
 	int y;
@@ -38,7 +39,7 @@ using glm::mat4;
 // ----------------------------------------------------------------------------
 // GLOBAL VARIABLES
 
-const int SCREEN_WIDTH = 1000;
+const int SCREEN_WIDTH = 2000;
 const int SCREEN_HEIGHT = 1000;
 SDL_Surface* screen;
 int t;
@@ -72,14 +73,8 @@ vector<vector<Boid *> *> neighbours[dimension * dimension * dimension];
 // ----------------------------------------------------------------------------
 // FUNCTIONS
 
-void ComputePolygonRows(const vector<Pixel>& vertexPixels, vector<Pixel>& leftPixels,
-	vector<Pixel>& rightPixels);
 void Update();
 void Draw();
-void Interpolate(ivec2 a, ivec2 b, vector<ivec2>& result);
-void Interpolate(Pixel a, Pixel b, vector<Pixel>& result);
-void VertexShader(const Vertex& v, Pixel& p);
-void PixelShader(const Pixel& p);
 void calculateCellNeighbours();
 
 void updateShaders(mat4 model, vec3 objectColor)
@@ -171,7 +166,6 @@ int main(int argc, char* argv[])
 	{
 		omp_init_lock(&writelock[i]);
 	}
-	
 
 	LoadLevel(objects, boids);
 	screen = InitializeSDL(SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -533,13 +527,12 @@ vec3 drag(Boid& current) {
 
 void simulateBoid(float dt){
 	//Clear the spatial partition and re-insert the Boids at the correct space
-	/*#pragma omp parallel for
-	for(int i = 0; i < dimension * dimension * dimension; i++){
-		spatialCells[i].clear();
-	}*/
+
+	//#pragma omp parallel for (Parallelizing this part is slower than not parallelizing it.
 	for (int i = 0; i < dimension * dimension * dimension; i++) {
 		spatialCells[i].clear();
 	}
+	
 	#pragma omp parallel for
 	for (int i = 0; i < boids.size(); i++) {
 		Boid& b = boids[i];
@@ -549,11 +542,6 @@ void simulateBoid(float dt){
 		spatialCells[index].push_back(&b);
 		omp_unset_lock(&writelock[index]);
 	}
-	/*for (Boid& b : boids) {
-		//printf("(%f, %f, %f): %d\n", b.pos.x, b.pos.y, b.pos.z, spatialCellsIndex(b.pos));
-		spatialCells[spatialCellsIndex(b.pos)].push_back(&b);
-	}*/
-
 
 
 	/*

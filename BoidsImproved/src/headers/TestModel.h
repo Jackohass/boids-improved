@@ -14,14 +14,22 @@ using glm::vec3;
 using glm::sphericalRand;
 using glm::linearRand;
 
-//Boid Simulation
-constexpr float confinementRadius = 3.0f;
-constexpr float cohesionRadius = 0.15f;
-constexpr float avoidanceRadius = 0.1f;
-constexpr float conformanceRadius = 0.25f;
-constexpr int dimension = confinementRadius / conformanceRadius;
 
-constexpr int numBoids = 3000;
+
+//Boid Simulation constants, precision of 8 for the GPU (just an arbitrary number)
+constexpr float confinementRadius = 4.0f;
+
+// WARNING: for GPU version, each radius must increase size. Ie avoidamce < cohesion < conformance
+constexpr float avoidanceRadius = 0.1f;
+constexpr float cohesionRadius = 0.15f;
+constexpr float conformanceRadius = 0.25f;
+constexpr float largestRadius = cohesionRadius > avoidanceRadius ? 
+	(cohesionRadius > conformanceRadius ? cohesionRadius : conformanceRadius) : 
+	(avoidanceRadius > conformanceRadius ? avoidanceRadius : conformanceRadius);
+
+constexpr int dimension = 2 * confinementRadius / largestRadius;
+
+constexpr int numBoids = 42222;
 
 // Used to describe a triangular surface:
 class Triangle
@@ -58,6 +66,9 @@ struct Boid {
 	glm::vec3 vel;
 	Object* mesh;
 
+	const vec3 boidForward = vec3(0.5, 1, 1.0f / (2.0f * glm::sqrt(3.0f)))
+		- vec3(1.0f / 2.0f, glm::sqrt(2.0f / 3.0f) / 2.0f, 1.0f / (2.0f * glm::sqrt(3.0f)));
+
 	Boid(const glm::vec3& p, const glm::vec3& r, const glm::vec3& v, Object* obj) {
 		pos = p;
 		rot = r;
@@ -76,14 +87,12 @@ struct Boid {
 	glm::mat4 getModel() {
 		//Calculate the angle the boid needs to rotate to point forward
 		//glm::vec3 forward(0, 1, 0);
-		vec3 M(1.0f / 2.0f, glm::sqrt(2.0f / 3.0f) / 2.0f, 1.0f / (2.0f * glm::sqrt(3.0f)));
-		vec3 forward = vec3(0.5, 1, 1.0f / (2.0f * glm::sqrt(3.0f))) - M;
 		
-		vec3 ref = glm::normalize(glm::cross(forward, vel));
-		float angle = glm::orientedAngle(glm::normalize(forward), glm::normalize(vel), ref);
+		vec3 ref = glm::normalize(glm::cross(boidForward, vel));
+		float angle = glm::orientedAngle(glm::normalize(boidForward), glm::normalize(vel), ref);
 
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
-		model *= glm::eulerAngleYXZ(rot[1], rot[0], rot[2]);
+		//model *= glm::eulerAngleYXZ(rot[1], rot[0], rot[2]);
 
 		model = glm::rotate(model, angle, ref);
 		return model;
