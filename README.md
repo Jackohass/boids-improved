@@ -12,9 +12,9 @@ The 2 orignal implementations are also included as 2 different projects in the s
 I have made 2 extra projects in the solution as my extension.
 One is utlizing OpenMP.
 The other one is trying to utilize the GPU to do the Boid simulation using OpenCL and includes OpenCL & OpenGL interoperability functions to directly allow the OpenCL output the necessary matrices so OpenGL can render without having to go through the CPU.
-It will be further extended to include the neighbour search on the GPU. 
-The neighbour search algorithm will be based on the paper "*Particle Simulation using CUDA*" (Green, S. 2010. *Particle Simulation using CUDA*).
-The GPU version is in need of some deseperate cleaning, since I wrote the whole thing over a weekend. Too many functions in the same file and way too many global variables. Also mutliple versions of functions as I was testing different implementations to see what was more optimal. 
+It does have a pretty naive neighbourhood search with spatial partition on the GPU. But it isn't fully working correctly, the boids still fly around inside of the box, but no longer do they display grouping behaviour. So I will need to fix that.
+But the plan is to improve the neighbourhood search step with the algorithm based on the paper "*Particle Simulation using CUDA*" (Green, S. 2010. *Particle Simulation using CUDA*).
+The GPU version is also in need of some deseperate cleaning, since I wrote the whole thing over a weekend. Too many functions in the same file and way too many global variables. Also mutliple versions of functions as I was testing different implementations to see what was more optimal. 
 There is also some room for improvments speed-wise. The kernel has some places where I am sure we could avoid branching, but some issues surfaced up when I made it branchless so I had to resort to go back to branches.
 The workgroup division could also be applied better I am sure, to achieve a better occupancy on the GPU.
 
@@ -40,5 +40,6 @@ The arrows allows you to control the camera in the cardinal directions.
 WASD allows you to control the light source in the cardinal directions.
 
 Q & E allows you to move the light source up and down.
+
 
 
