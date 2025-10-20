@@ -29,7 +29,8 @@ constexpr float largestRadius = cohesionRadius > avoidanceRadius ?
 
 constexpr int dimension = 2 * confinementRadius / largestRadius;
 
-constexpr int numBoids = 42222;
+constexpr int numBoids = 22222;
+constexpr int numCells = dimension * dimension * dimension;
 
 // Used to describe a triangular surface:
 class Triangle

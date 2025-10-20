@@ -75,6 +75,7 @@ glm::mat4 boidModels[numBoids];
 
 size_t GlobalWorkSize[3] = { numBoids, 1, 1 };
 size_t LocalWorkSize[3] = { 1024, 1, 1 };
+size_t DIMDIMDIM_GlobalWorkSize[3] = { numBoids, 1, 1 };
 cl_device_id clDeviceId;
 cl_kernel clKernel;
 cl_platform_id clPlatformId;
@@ -82,6 +83,10 @@ cl_program clProgram;
 cl_context clContext;
 cl_command_queue clQueue;
 cl_kernel computeBoid;
+cl_kernel computeBoidV2;
+cl_kernel knNeighbourCount;
+cl_kernel knNeighbourInsert;
+cl_kernel knExclusiveScan;
 
 int clNeighsNumCap = numBoids;
 
@@ -90,6 +95,10 @@ cl_mem clNeighs;
 cl_mem clNeighOffset;
 cl_mem clNeighSize;
 cl_mem clBoidModels;
+
+cl_mem clSpatialCells;
+cl_mem clSpatialOffset;
+cl_mem clSpatialCellsCount;
 
 cl_int clErr = 0;
 
@@ -156,7 +165,7 @@ bool IsCLExtensionSupported(const char* extension) {
 }
 
 void initKernels() {
-	const unsigned int numKernels = 1;
+	const unsigned int numKernels = 5;
 
 	string kernelStrings[numKernels];
 	ifstream kernelFiles[numKernels];
@@ -169,7 +178,11 @@ void initKernels() {
 
 
 	try {
-		kernelFiles[0].open("src/shaders/computeBoid.cl");
+		//kernelFiles[0].open("src/shaders/computeBoid.cl");
+		kernelFiles[0].open("src/shaders/computeBoidV2.cl");
+		kernelFiles[1].open("src/shaders/neighbourCount.cl");
+		kernelFiles[2].open("src/shaders/neighbourInsert.cl");
+		kernelFiles[3].open("src/shaders/neighbourExclusiveScan.cl");
 
 		for (int i = 0; i < numKernels; i++)
 		{
@@ -210,25 +223,49 @@ void initKernels() {
 		printf("Error compiling the kernel %i: - %s\n", clErr, buf);
 	}
 
-	computeBoid = clCreateKernel(clProgram, "simulateBoid", &clErr);
-	clError(__LINE__, clErr);
-
+	//Create Buffers
 	clBoids = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(GPUBoid) * numBoids, NULL, &clErr);
 	clError(__LINE__, clErr);
 
-	clNeighs = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(NeighbourWatchlistEntry) * numBoids, NULL, &clErr);
+	/*clNeighs = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(NeighbourWatchlistEntry) * numBoids, NULL, &clErr);
 	clError(__LINE__, clErr);
 
 	clNeighOffset = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(int) * numBoids, NULL, &clErr);
 	clError(__LINE__, clErr);
 
 	clNeighSize = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(int) * numBoids, NULL, &clErr);
-	clError(__LINE__, clErr);
+	clError(__LINE__, clErr);*/
 
 	clBoidModels = clCreateFromGLBuffer(clContext, CL_MEM_WRITE_ONLY, modelBuffer, &clErr);
 	clError(__LINE__, clErr);
 
-	clErr = clSetKernelArg(computeBoid, 0, sizeof(cl_mem), &clBoids);
+	clSpatialCells = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(int) * numBoids, NULL, &clErr);
+	clError(__LINE__, clErr);
+
+	clSpatialOffset = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(int) * numCells, NULL, &clErr);
+	clError(__LINE__, clErr);
+
+	clSpatialCellsCount = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(int) * numCells, NULL, &clErr);
+	clError(__LINE__, clErr);
+
+	//Create kernels
+	/*computeBoid = clCreateKernel(clProgram, "simulateBoid", &clErr);
+	clError(__LINE__, clErr);*/
+
+	computeBoidV2 = clCreateKernel(clProgram, "simulateBoid", &clErr);
+	clError(__LINE__, clErr);
+
+	knNeighbourCount = clCreateKernel(clProgram, "neighbourCount", &clErr);
+	clError(__LINE__, clErr);
+
+	knNeighbourInsert = clCreateKernel(clProgram, "neighbourInsert", &clErr);
+	clError(__LINE__, clErr);
+
+	knExclusiveScan = clCreateKernel(clProgram, "neighbourExclusiveScan", &clErr);
+	clError(__LINE__, clErr);
+
+	//Set kernel arguments for ComputeBoid
+	/*clErr = clSetKernelArg(computeBoid, 0, sizeof(cl_mem), &clBoids);
 	clError(__LINE__, clErr);
 
 	clErr = clSetKernelArg(computeBoid, 1, sizeof(cl_mem), &clNeighs);
@@ -241,6 +278,47 @@ void initKernels() {
 	clError(__LINE__, clErr);
 
 	clErr = clSetKernelArg(computeBoid, 4, sizeof(cl_mem), &clBoidModels);
+	clError(__LINE__, clErr);*/
+
+	//Set kernel arguments for ComputeBoidV2
+	clErr = clSetKernelArg(computeBoidV2, 0, sizeof(cl_mem), &clBoids);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(computeBoidV2, 1, sizeof(cl_mem), &clSpatialCells);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(computeBoidV2, 2, sizeof(cl_mem), &clSpatialOffset);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(computeBoidV2, 3, sizeof(cl_mem), &clBoidModels);
+	clError(__LINE__, clErr);
+
+	//Set kernel arguments for neighbourCount
+	clErr = clSetKernelArg(knNeighbourCount, 0, sizeof(cl_mem), &clBoids);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(knNeighbourCount, 1, sizeof(cl_mem), &clSpatialCellsCount);
+	clError(__LINE__, clErr);
+
+	//Set kernel arguments for neighbourInsert
+	clErr = clSetKernelArg(knNeighbourInsert, 0, sizeof(cl_mem), &clBoids);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(knNeighbourInsert, 1, sizeof(cl_mem), &clSpatialCells);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(knNeighbourInsert, 2, sizeof(cl_mem), &clSpatialOffset);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(knNeighbourInsert, 3, sizeof(cl_mem), &clSpatialCellsCount);
+	clError(__LINE__, clErr);
+
+	//Set kernel arguments for neighbourExclusiveScan
+
+	clErr = clSetKernelArg(knExclusiveScan, 0, sizeof(cl_mem), &clSpatialCells);
+	clError(__LINE__, clErr);
+
+	clErr = clSetKernelArg(knExclusiveScan, 1, sizeof(cl_mem), &clSpatialOffset);
 	clError(__LINE__, clErr);
 }
 
@@ -1149,6 +1227,118 @@ vec3 drag(GPUBoid& current) {
 	return -currVel * drag;
 }
 
+void simulateBoidGPUV2(float dt) {
+	//Clear the spatial partition and re-insert the Boids at the correct space
+	//#pragma omp parallel for (Parallelizing this part is slower than not parallelizing it.
+	int simT = SDL_GetTicks();
+	const cl_int pattern = 0;
+	clErr = clEnqueueFillBuffer(clQueue, clSpatialCellsCount, &pattern, sizeof(cl_int) * 1, 0, sizeof(cl_int) * numCells, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	clErr = clEnqueueNDRangeKernel(clQueue, knNeighbourCount, 1, NULL, DIMDIMDIM_GlobalWorkSize, NULL, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	clErr = clEnqueueNDRangeKernel(clQueue, knExclusiveScan, 1, NULL, DIMDIMDIM_GlobalWorkSize, NULL, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	int currOffset;
+	clErr = clEnqueueReadBuffer(clQueue, clSpatialOffset, CL_TRUE, numCells - 1, sizeof(int) * 1, &currOffset, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+	int currMaxNeighs;
+	clErr = clEnqueueReadBuffer(clQueue, clSpatialCellsCount, CL_TRUE, numCells - 1, sizeof(int) * 1, &currMaxNeighs, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	if (currMaxNeighs > clNeighsNumCap) {
+		clErr = clReleaseMemObject(clNeighs);
+		clError(__LINE__, clErr);
+		clErr = clFinish(clQueue);
+		clError(__LINE__, clErr);
+
+
+		clNeighsNumCap = currMaxNeighs;
+		clNeighs = clCreateBuffer(clContext, CL_MEM_READ_WRITE, sizeof(NeighbourWatchlistEntry) * clNeighsNumCap, NULL, &clErr);
+		clError(__LINE__, clErr);
+		clErr = clFinish(clQueue);
+		clError(__LINE__, clErr);
+
+
+		clErr = clSetKernelArg(computeBoidV2, 1, sizeof(cl_mem), &clNeighs);
+		clError(__LINE__, clErr);
+		clErr = clFinish(clQueue);
+		clError(__LINE__, clErr);
+
+	}
+
+	clErr = clEnqueueNDRangeKernel(clQueue, knNeighbourInsert, 1, NULL, DIMDIMDIM_GlobalWorkSize, NULL, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	int simT2 = SDL_GetTicks();
+	int timeDiff = simT2 - simT;
+	cout << "Neighboursearch time: " << timeDiff << " ms." << endl;
+
+	/*
+		For each boid, calulate the vector for each of the three rules
+			Simulate a fourth bounds rule to keep the boids in line
+		Then sum these vectors (without prioritising them, which differs from the paper)
+		Add this sum to the velocity of the boid
+		Update the position by the given velocity
+
+		Sources: https://vergenet.net/~conrad/boids/pseudocode.html, https://dl.acm.org/doi/10.1145/37402.37406
+	*/
+
+	simT = SDL_GetTicks();
+
+	clErr = clSetKernelArg(computeBoidV2, 4, sizeof(float), &dt);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	clErr = clSetKernelArg(computeBoidV2, 5, sizeof(int), &clNeighsNumCap);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	clErr = clEnqueueAcquireGLObjects(clQueue, 1, &clBoidModels, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+
+	clErr = clEnqueueNDRangeKernel(clQueue, computeBoidV2, 1, NULL, GlobalWorkSize, NULL, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+	clErr = clEnqueueReleaseGLObjects(clQueue, 1, &clBoidModels, 0, NULL, NULL);
+	clError(__LINE__, clErr);
+	clErr = clFinish(clQueue);
+	clError(__LINE__, clErr);
+
+	simT2 = SDL_GetTicks();
+	timeDiff = simT2 - simT;
+	cout << "Computation time: " << timeDiff << " ms." << endl;
+}
+
 void simulateBoidGPU(float dt) {
 	//Clear the spatial partition and re-insert the Boids at the correct space
 	//#pragma omp parallel for (Parallelizing this part is slower than not parallelizing it.
@@ -1230,7 +1420,6 @@ void simulateBoidGPU(float dt) {
 	timeDiff = simT2 - simT;
 	cout << "Computation time: " << timeDiff << " ms." << endl;
 }
-
 
 void simulateBoidV4(float dt) {
 	//Clear the spatial partition and re-insert the Boids at the correct space
@@ -1742,7 +1931,7 @@ void Update()
 	handleInput(dt);
 
 	int simT = SDL_GetTicks();
-	simulateBoidGPU(dt);
+	simulateBoidGPUV2(dt);
 	int simT2 = SDL_GetTicks();
 	dSimT = simT2 - simT;
 

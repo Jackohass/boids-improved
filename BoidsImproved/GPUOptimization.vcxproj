@@ -34,7 +34,10 @@
       <FileType>Document</FileType>
     </CopyFileToFolders>
     <None Include="src\shaders\computeBoid.cl" />
+    <None Include="src\shaders\computeBoidV2.cl" />
     <None Include="src\shaders\getBoidHash.comp" />
+    <None Include="src\shaders\neighbourCount.cl" />
+    <None Include="src\shaders\neighbourInsert.cl" />
     <None Include="src\shaders\pixelShader.frag" />
     <None Include="src\shaders\vertexGPUShader.vert" />
     <None Include="src\shaders\vertexShader.vert" />
